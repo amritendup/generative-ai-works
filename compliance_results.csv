@@ -1,0 +1,5 @@
+From,compliance,categories,violations,confidence,score
+hillbenjamin@example.com,Non-Compliant,"['Secrecy', 'Market manipulation/ Misconduct']","['I have inside information regarding the upcoming interest rate changes.', 'You might want to buy stocks in XYZ bank before the news becomes public.']",1.0,0.05
+rbaker@example.net,Non-Compliant,['Market bribery'],['I’m happy to provide a small gift card for your help.'],0.95,0.14
+graythomas@example.net,Non-Compliant,['Secrecy'],['We need to discuss our client’s portfolio. but please do not send any information over email.'],0.95,0.09
+thood@example.net,Compliant,[],[],1.0,1.0
