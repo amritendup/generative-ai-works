@@ -1,0 +1,8 @@
+langchain
+langgraph
+openai  # Used by LangChain for Azure OpenAI
+pydantic
+streamlit
+python-dotenv
+tiktoken # For token counting/chunking (optional but recommended)
+#py-java-parser # Placeholder for a custom/simple Java code parser
