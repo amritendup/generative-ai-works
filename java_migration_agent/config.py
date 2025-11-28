@@ -13,7 +13,7 @@ AZURE_OPENAI_DEPLOYMENT_NAME = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME", "gpt-4o
 AZURE_OPENAI_API_VERSION = os.getenv("OPENAI_API_VERSION", "2024-12-01-preview")
 
 # --- Agent Configuration ---
-CHUNK_SIZE_LIMIT = 500  # Max characters per code chunk for the LLM
+CHUNK_SIZE_LIMIT = 20000  # Max characters per code chunk for the LLM
 EVAL_REFINEMENT_ATTEMPTS = 1 # Max times to refine documentation
 
 # --- Target Architecture Context ---
