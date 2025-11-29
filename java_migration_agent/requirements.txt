@@ -1,3 +1,4 @@
+javalang
 langchain
 langgraph
 openai  # Used by LangChain for Azure OpenAI

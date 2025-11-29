@@ -3,6 +3,7 @@ import zipfile
 import io
 import javalang
 from typing import List
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
 from .state_models import MigrationState, CodeChunk, EvaluationReport, StateDict
@@ -56,18 +57,57 @@ def parse_and_split_code(state: StateDict) -> StateDict:
                 # Mock extraction (Replace with actual extraction logic)
                 class_name = node.name
                 class_content = f"// Extracted content for {class_name}...\n" 
-                
+
+                if len(class_content) > CHUNK_SIZE_LIMIT:
+                    print(f"Warning: Class {class_name} exceeds limit ({len(class_content)} chars). Sub-splitting required.")
+    
+                 # --- IMPLEMENTATION OF CHUNK_SIZE_LIMIT ---
+    
+                 # Use a recursive text splitter (e.g., LangChain's RecursiveCharacterTextSplitter)
+    
+    
+                # Initialize splitter tuned for code blocks (using \n\n, \n, and Java syntax)
+                    code_splitter = RecursiveCharacterTextSplitter(
+                    chunk_size=CHUNK_SIZE_LIMIT,
+                    chunk_overlap=50, # Small overlap to maintain context
+                    separators=["\n\n", "\n", ";", "{", "}"]
+                    )
+    
+                # Split the single large class content into multiple, smaller chunks
+                sub_chunks = code_splitter.split_text(class_content)
+    
+                for i, sub_content in enumerate(sub_chunks):
+                    new_chunks.append(CodeChunk(
+                    file_path=JAVA_CODE_PLACEHOLDER,
+                    chunk_index=f"{chunk_index}-{i}", # Modify index to track sub-chunks
+                    original_content=sub_content,
+                    status="SPLIT"
+                ))
+        
+            else:
+            # If the class is smaller than the limit, treat it as one chunk
                 new_chunks.append(CodeChunk(
+                file_path=JAVA_CODE_PLACEHOLDER,
+                chunk_index=f"{chunk_index}",
+                original_content=class_content,
+                status="SPLIT"
+            ))
+
+                '''new_chunks.append(CodeChunk(
                     file_path=JAVA_CODE_PLACEHOLDER,
                     chunk_index=chunk_index,
                     original_content=class_content, # The extracted code for the class
                     status="SPLIT"
-                ))
+                ))'''
                 chunk_index += 1
 
     except javalang.tokenizer.LexerError as e:
         raise ValueError(f"Failed to parse Java file due to syntax error: {e}")
-    
+
+        
+
+
+
     # 4. Update the state with all generated chunks
     if not new_chunks:
          # Fallback: if no classes found (e.g., utility file), treat as one chunk
@@ -234,6 +274,39 @@ def generate_unit_tests(state: StateDict) -> StateDict:
     migration_state.chunks[migration_state.current_chunk_index] = chunk
     return migration_state.model_dump()
 
+def refine_migrated_code(state: StateDict) -> StateDict:
+    """Activity 7: Refine/Refactor Generated Code."""
+    print("Agent: Refactoring migrated code...")
+    migration_state = MigrationState(**state)
+    chunk = migration_state.chunks[migration_state.current_chunk_index]
+
+    refactor_prompt = ChatPromptTemplate.from_messages([
+        ("system", 
+         f"You are a Senior Java Refactoring Expert. Analyze the **Migrated Code** and the **Documentation**. "
+         "Identify areas for improvement regarding performance, naming conventions, use of Java 21 features, and overall code cleanliness. "
+         "Refactor the code only if clear improvements are possible. Otherwise, return the original migrated code. "
+         "Output only the complete, final Java code block. "
+         f"The architecture context is: {TARGET_ARCHITECTURE_PROMPT}. "
+        ),
+        ("human", 
+         f"--- Validated Documentation ---\n{chunk.documentation}\n\n"
+         f"--- Migrated Java Code to Refactor ---\n```java\n{chunk.migrated_code}\n```"
+        )
+    ])
+
+    chain = refactor_prompt | get_azure_llm() # Use Azure LLM (GPT-4o) for high-quality refactoring
+    response = chain.invoke({})
+    
+    # Extract Java code block
+    refined_code = response.content.strip().strip('```java').strip('```').strip()
+
+    # Update state
+    # If the LLM just returns the original code, the refined_code is nearly identical.
+    chunk.refined_code = refined_code 
+    chunk.status = "REF_COMPLETE"
+    migration_state.chunks[migration_state.current_chunk_index] = chunk
+    return migration_state.model_dump()
+
 # --- Utility Node ---
 def update_chunk_progress(state: StateDict) -> StateDict:
     """Moves the workflow to the next chunk or completes."""
@@ -247,4 +320,19 @@ def update_chunk_progress(state: StateDict) -> StateDict:
     if migration_state.current_chunk_index >= len(migration_state.chunks):
         migration_state.overall_status = "MIGRATION_COMPLETE"
         
+    return migration_state.model_dump()
+
+def update_chunk_index(state: StateDict) -> StateDict:
+    """Marks the current chunk as DONE and advances the index."""
+    migration_state = MigrationState(**state)
+    
+    # 1. Mark the current chunk as DONE
+    current_chunk = migration_state.chunks[migration_state.current_chunk_index]
+    current_chunk.status = "DONE"
+    
+    # 2. Advance the index to the next chunk
+    migration_state.current_chunk_index += 1
+    
+    print(f"--- Chunk {migration_state.current_chunk_index - 1} complete. Advancing to Chunk {migration_state.current_chunk_index} ---")
+    
     return migration_state.model_dump()

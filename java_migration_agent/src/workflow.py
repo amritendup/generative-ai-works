@@ -1,76 +1,96 @@
+# src/workflow.py
+
 from langgraph.graph import StateGraph, END
 from .agents import (
     parse_and_split_code, 
     generate_documentation, 
     evaluate_documentation, 
     generate_migrated_code, 
-    generate_unit_tests
+    generate_unit_tests,
+    refine_migrated_code,
+    update_chunk_index
 )
 from .state_models import MigrationState, StateDict
 from config import EVAL_REFINEMENT_ATTEMPTS
 
-def should_refine(state: StateDict) -> str:
-    """Conditional edge logic: Determine if documentation needs refinement or if we proceed."""
+# --- Conditional Edge Functions ---
+
+def should_refine_docs(state: StateDict) -> str:
+    """Step 3 & 4 Loop Condition: Re-run documentation or proceed to migration."""
     migration_state = MigrationState(**state)
     chunk = migration_state.chunks[migration_state.current_chunk_index]
     
+    # Condition 1: Evaluation failed AND we are under the attempt limit (e.g., attempt 1 or 2)
     if chunk.status == "EVAL_FAIL" and chunk.refinement_count < EVAL_REFINEMENT_ATTEMPTS:
-        return "refine"  # Go back to documentation
+        print(f"Decision: Evaluation failed. Rerunning documentation (Attempt {chunk.refinement_count}/{EVAL_REFINEMENT_ATTEMPTS}).")
+        return "rerun_documentation" 
     else:
-        return "migrate" # Proceed to migration (either passed or max attempts reached)
+        # Condition 2: Passed or limit reached (e.g., attempt 3)
+        print("Decision: Documentation approved or refinement limit reached. Proceeding to migration.")
+        chunk.status = "EVAL_PASS" # Ensure status is set correctly before migration
+        migration_state.chunks[migration_state.current_chunk_index] = chunk
+        return "proceed_migration" 
 
-def should_continue_loop(state: StateDict) -> str:
+def should_continue_chunk_loop(state: StateDict) -> str:
     """Conditional edge logic: Check if there are more chunks to process."""
     migration_state = MigrationState(**state)
+    
+    # Increment the chunk index for the loop update node
+    # Note: We must update the index after the final node of the inner loop completes
+    #if migration_state.current_chunk_index < len(migration_state.chunks):
+        #migration_state.current_chunk_index += 1
+        
     if migration_state.current_chunk_index < len(migration_state.chunks):
-        return "process_chunk"
+        return "process_next_chunk"
     else:
-        return "end"
+        return "end_workflow"
 
 def build_workflow():
-    """Builds the LangGraph workflow."""
+    """Builds the LangGraph workflow with the corrected 8-step flow."""
     workflow = StateGraph(StateDict)
 
-    # 1. Define Nodes (The Agents)
+    # 1. Define Nodes
     workflow.add_node("splitter", parse_and_split_code)
-    workflow.add_node("documenter", generate_documentation)
-    workflow.add_node("evaluator", evaluate_documentation)
-    workflow.add_node("migrator", generate_migrated_code)
-    workflow.add_node("tester", generate_unit_tests)
-    # This node simply updates the index to move to the next chunk
-    workflow.add_node("next_chunk", lambda s: MigrationState(**s).model_dump()) 
+    workflow.add_node("generate_documentation", generate_documentation) 
+    workflow.add_node("evaluate_documentation", evaluate_documentation) 
+    workflow.add_node("generate_migrated_code", generate_migrated_code) 
+    workflow.add_node("generate_unit_tests", generate_unit_tests) 
+    workflow.add_node("refine_code", refine_migrated_code) 
+    workflow.add_node("update_index", update_chunk_index) # NEW NODE
 
-    # 2. Define Edges (The Flow)
+    # 2. Define Edges
     
-    # Initial Start: Only run split once, then enter the loop
+    # Initialization
     workflow.set_entry_point("splitter")
-    workflow.add_edge("splitter", "documenter")
+    workflow.add_edge("splitter", "generate_documentation") # 1 -> 2
 
-    # The Core Chunk Processing Loop: document -> evaluate -> (refine OR migrate) -> test -> next chunk
-    workflow.add_edge("documenter", "evaluator")
+    # Documentation/Evaluation Loop (Steps 2, 3, 4)
+    workflow.add_edge("generate_documentation", "evaluate_documentation") # 2 -> 3
     
-    # Conditional Edge: Refine or Migrate
+    # Conditional edge controls the refinement loop count
     workflow.add_conditional_edges(
-        "evaluator",
-        should_refine,
+        "evaluate_documentation",
+        should_refine_docs, # This function checks if count < limit
         {
-            "refine": "documenter", # Loop back for refinement
-            "migrate": "migrator"
+            "rerun_documentation": "generate_documentation", # Step 4: Loop back
+            "proceed_migration": "generate_migrated_code"   # Step 5: Exit loop
         }
     )
+
+    # Post-Migration Steps (Steps 5, 6, 7)
+    workflow.add_edge("generate_migrated_code", "generate_unit_tests") # 5 -> 6
+    workflow.add_edge("generate_unit_tests", "refine_code") # 6 -> 7
     
-    workflow.add_edge("migrator", "tester")
-    
-    # After testing, update the index and check if the loop should continue
-    workflow.add_edge("tester", "next_chunk")
-    
-    # Loop Check: Continue processing the next chunk or END
+    # Chunk Completion and Index Update
+    workflow.add_edge("refine_code", "update_index") # 7 -> Index Update
+
+    # Final Loop Check: Process next chunk or END
     workflow.add_conditional_edges(
-        "next_chunk",
-        should_continue_loop,
+        "update_index",
+        should_continue_chunk_loop,
         {
-            "process_chunk": "documenter", # Start processing the new current chunk
-            "end": END
+            "process_next_chunk": "generate_documentation", # Start Step 2 for next chunk
+            "end_workflow": END
         }
     )
 

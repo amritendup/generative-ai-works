@@ -15,16 +15,22 @@ class CodeChunk(BaseModel):
     chunk_index: int
     original_content: str
     
+    
     # Generated artifacts
     documentation: str = Field(default="", description="Markdown documentation for this chunk.")
     migrated_code: str = Field(default="", description="Java 21 Spring Boot code.")
+    refined_code: str = Field(default="", description="Refactored and final Java code.")
     unit_tests: str = Field(default="", description="JUnit 5 test cases.")
     
     # Evaluation tracking
     eval_report: EvaluationReport | None = None
     refinement_count: int = 0
-    status: Literal["PENDING", "SPLIT", "DOC_COMPLETE", "EVAL_FAIL", "EVAL_PASS", "MIG_COMPLETE", "TEST_COMPLETE", "DONE"] = "PENDING"
-
+    
+    status: Literal[
+        "PENDING", "SPLIT", "DOC_COMPLETE", "EVAL_FAIL", "EVAL_PASS", 
+        "MIG_COMPLETE", "TEST_COMPLETE", "REF_COMPLETE", "DONE" 
+    ] = "PENDING"
+    
 class MigrationState(BaseModel):
     """The central state object for the LangGraph workflow."""
     chunks: List[CodeChunk] = Field(default_factory=list)
