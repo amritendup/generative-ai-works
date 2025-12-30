@@ -55,7 +55,7 @@ def build_vector_db():
 
     # LOAD A SMALL, OPENSOURCE EMBEDDING MODEL
     
-    embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+    embeddings = HuggingFaceEmbeddings(model_name="text-embeddings-inference:1.2")
         
     vectorstore = Chroma.from_documents(docs, embeddings, collection_name="category_db")
     return vectorstore.as_retriever(search_kwargs={"k": 3})

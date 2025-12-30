@@ -25,10 +25,14 @@ def run_full_migration(initial_state: MigrationState):
     try:
         # Initial run of the splitter node
         initial_state_dict = initial_state.model_dump()
-        
+        config = {
+        # CRITICAL: This line sets the recursion limit for the entire workflow run.
+            "recursion_limit": 1000 
+        }
+
         # We run the whole compiled graph from the splitter node to the END
         # LangGraph automatically handles the state transitions and loops.
-        final_state = workflow.invoke(initial_state_dict)
+        final_state = workflow.invoke(initial_state_dict, config=config)
         
         st.session_state['final_state'] = final_state
         st.session_state['status'] = "MIGRATION_COMPLETE"
@@ -39,7 +43,11 @@ def run_full_migration(initial_state: MigrationState):
         st.error(f"LLM Structured Output Error (Validation Failed): {e}")
     except Exception as e:
         st.session_state['status'] = "FATAL_ERROR"
-        st.error(f"A fatal error occurred during the workflow: {e}")
+        msg = str(e).lower()
+        if any(token in msg for token in ("content filter", "moderation", "has not provided the response", "content was filtered")):
+            st.error("A fatal error occurred: the model response was blocked by content moderation. Try sanitizing sensitive terms or reduce input size. See logs/llm_filter.log for sanitized snapshots and diagnostics.")
+        else:
+            st.error(f"A fatal error occurred during the workflow: {e}")
 
 # --- Streamlit UI Components ---
 

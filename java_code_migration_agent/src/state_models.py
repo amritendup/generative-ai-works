@@ -1,6 +1,8 @@
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Literal
 
+MigrationPhase = Literal['DOC_EVAL', 'CODE_GEN', 'TEST_REF', 'DASHBOARD', 'COMPLETE']
+
 class EvaluationReport(BaseModel):
     """Structured output for the LLM-as-a-Judge."""
     completeness_score: Literal[1, 2, 3, 4, 5] = Field(description="Score 1-5 for completeness against the source code.")
@@ -36,6 +38,11 @@ class MigrationState(BaseModel):
     chunks: List[CodeChunk] = Field(default_factory=list)
     unparsed_file_content: Dict[str, str] = Field(default_factory=dict)
     current_chunk_index: int = 0
+    # Total number of chunks (set once during splitting)
+    total_chunks: int = 0 
+
+    # Phase control field
+    current_phase: MigrationPhase = Field(default='DOC_EVAL')
     migration_summary: str = "" 
     overall_status: str = "INIT"
 
